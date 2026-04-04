@@ -1,16 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Voice Analyzer</title>
 
 <style>
 body {
   margin: 0;
-  font-family: 'Courier New', monospace;
+  font-family: Arial;
   background: linear-gradient(135deg,#0a0e1a,#0d1528,#0a0e1a);
-  color: #e2e8f0;
+  color: white;
   text-align: center;
 }
 
@@ -20,21 +19,184 @@ body {
 
 .card {
   background: rgba(15,23,42,0.9);
-  border-radius: 15px;
+  border-radius: 12px;
   padding: 15px;
-  margin: 10px 0;
+  margin: 10px;
 }
 
 button {
   padding: 15px;
-  border-radius: 10px;
   border: none;
-  font-weight: bold;
+  border-radius: 10px;
   font-size: 16px;
+  cursor: pointer;
 }
 
-.start {
-  background: #6366f1;
+.start { background: #6366f1; color: white; }
+.stop { background: red; color: white; }
+
+.bar {
+  height: 10px;
+  background: linear-gradient(90deg,#6366f1,#22c55e,#f59e0b,#ef4444);
+  border-radius: 5px;
+  margin-top: 10px;
+  position: relative;
+}
+
+.pointer {
+  width: 12px;
+  height: 12px;
+  background: white;
+  border-radius: 50%;
+  position: absolute;
+  top: -3px;
+  left: 0%;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+<h2>🎙️ Voice Analyzer</h2>
+
+<div class="card">
+  <p>Frequency: <span id="hz">--</span> Hz</p>
+  <p>Words: <span id="words">0</span></p>
+  <p>Time: <span id="time">0</span> sec</p>
+</div>
+
+<div class="card">
+  Pitch Meter
+  <div class="bar">
+    <div id="pointer" class="pointer"></div>
+  </div>
+</div>
+
+<div class="card">
+  <p id="text">Press START</p>
+</div>
+
+<button id="btn" class="start">START</button>
+</div>
+
+<script>
+let audioContext, analyser, dataArray;
+let running = false;
+let animationId;
+let seconds = 0;
+let timer;
+
+// Pitch detection
+function autoCorrelate(buffer, sampleRate) {
+  let SIZE = buffer.length;
+  let rms = 0;
+
+  for (let i = 0; i < SIZE; i++) {
+    rms += buffer[i] * buffer[i];
+  }
+  rms = Math.sqrt(rms / SIZE);
+
+  if (rms < 0.01) return null;
+
+  let bestOffset = -1;
+  let bestCorr = 0;
+
+  for (let offset = 1; offset < SIZE/2; offset++) {
+    let corr = 0;
+    for (let i = 0; i < SIZE/2; i++) {
+      corr += Math.abs(buffer[i] - buffer[i+offset]);
+    }
+    corr = 1 - corr/(SIZE/2);
+
+    if (corr > bestCorr) {
+      bestCorr = corr;
+      bestOffset = offset;
+    }
+  }
+
+  if (bestOffset === -1) return null;
+  return sampleRate / bestOffset;
+}
+
+// Start
+async function start() {
+  const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+  audioContext = new AudioContext();
+  analyser = audioContext.createAnalyser();
+
+  const source = audioContext.createMediaStreamSource(stream);
+  source.connect(analyser);
+
+  dataArray = new Float32Array(analyser.fftSize);
+
+  run();
+
+  timer = setInterval(() => {
+    seconds++;
+    document.getElementById("time").innerText = seconds;
+  },1000);
+
+  // Speech recognition
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SpeechRecognition) {
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+
+    rec.onresult = (e) => {
+      let text = "";
+      for (let i = 0; i < e.results.length; i++) {
+        text += e.results[i][0].transcript;
+      }
+      document.getElementById("text").innerText = text;
+      document.getElementById("words").innerText = text.split(" ").length;
+    };
+    rec.start();
+  }
+}
+
+// Loop
+function run() {
+  analyser.getFloatTimeDomainData(dataArray);
+  let freq = autoCorrelate(dataArray, audioContext.sampleRate);
+
+  if (freq) {
+    document.getElementById("hz").innerText = freq.toFixed(1);
+
+    let pct = Math.min(Math.max(freq,50),500);
+    pct = ((pct-50)/450)*100;
+
+    document.getElementById("pointer").style.left = pct + "%";
+  }
+
+  animationId = requestAnimationFrame(run);
+}
+
+// Stop
+function stop() {
+  cancelAnimationFrame(animationId);
+  clearInterval(timer);
+  audioContext.close();
+}
+
+// Button
+document.getElementById("btn").onclick = () => {
+  if (!running) {
+    running = true;
+    document.getElementById("btn").innerText = "STOP";
+    document.getElementById("btn").className = "stop";
+    start();
+  } else {
+    running = false;
+    document.getElementById("btn").innerText = "START";
+    document.getElementById("btn").className = "start";
+    stop();
+  }
+};
+</script>
+
+</body>
+</html>  background: #6366f1;
   color: white;
 }
 
