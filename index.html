@@ -109,28 +109,39 @@ button{
 let ctx, analyser, stream, source;
 let running=false, time=0, interval;
 let recognition, finalText="", wordCount=0;
-
 let mediaRecorder, audioChunks=[], recording=false;
 
+// 🔊 BETTER pitch detection (with noise filter)
 function detectPitch(buf,sr){
   let SIZE=buf.length;
-  let best=-1, bestCorr=0;
+  let rms=0;
 
-  for(let off=20;off<1000;off++){
+  for(let i=0;i<SIZE;i++) rms+=buf[i]*buf[i];
+  rms=Math.sqrt(rms/SIZE);
+
+  if(rms < 0.02) return null; // 🔥 noise filter
+
+  let bestOffset=-1;
+  let bestCorrelation=0;
+
+  for(let offset=20; offset<500; offset++){
     let corr=0;
-    for(let i=0;i<1000;i++){
-      corr += buf[i]*buf[i+off];
+
+    for(let i=0;i<500;i++){
+      corr += buf[i]*buf[i+offset];
     }
-    if(corr>bestCorr){
-      bestCorr=corr;
-      best=off;
+
+    if(corr > bestCorrelation){
+      bestCorrelation=corr;
+      bestOffset=offset;
     }
   }
 
-  if(best>0){
-    let hz=sr/best;
+  if(bestOffset>0){
+    let hz=sr/bestOffset;
     if(hz>=80 && hz<=400) return Math.round(hz);
   }
+
   return null;
 }
 
@@ -156,22 +167,25 @@ async function start(){
     analyser.getFloatTimeDomainData(data);
 
     let hz=detectPitch(data,ctx.sampleRate);
+
     if(hz){
       document.getElementById("hz").innerText=hz;
       document.getElementById("dot").style.left=((hz-80)/320*100)+"%";
     }
 
+    // volume
     let sum=0;
     for(let i of data) sum+=i*i;
-    let vol=Math.sqrt(sum/data.length)*300;
+    let vol=Math.min(Math.sqrt(sum/data.length)*300,100);
     document.getElementById("vol").style.width=vol+"%";
 
     requestAnimationFrame(loop);
   }
   loop();
 
-  // Speech recognition FIXED
+  // 🎤 FIXED speech recognition
   let SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
   if(SR){
     recognition = new SR();
     recognition.continuous=true;
@@ -179,21 +193,26 @@ async function start(){
     recognition.lang="en-IN";
 
     recognition.onresult=(e)=>{
-      let final="", interim="";
+      let interim="";
 
-      for(let i=0;i<e.results.length;i++){
+      for(let i=e.resultIndex;i<e.results.length;i++){
         let t=e.results[i][0].transcript;
-        if(e.results[i].isFinal) final+=t+" ";
-        else interim+=t;
+
+        if(e.results[i].isFinal){
+          finalText += t + " ";
+        }else{
+          interim += t;
+        }
       }
 
-      finalText=final.trim();
-      let full=(finalText+" "+interim).trim();
+      let full = (finalText + interim).trim();
 
-      document.getElementById("text").innerText=full || "Listening...";
+      document.getElementById("text").innerText =
+        full || "Listening...";
 
+      // ✅ word count FIXED
       wordCount = finalText
-        ? finalText.split(/\s+/).filter(w=>w).length
+        ? finalText.trim().split(/\s+/).length
         : 0;
 
       document.getElementById("words").innerText=wordCount;
@@ -213,13 +232,13 @@ async function start(){
 
 function stop(){
   running=false;
-  stream.getTracks().forEach(t=>t.stop());
+  if(stream) stream.getTracks().forEach(t=>t.stop());
   clearInterval(interval);
   if(recognition) recognition.stop();
   document.getElementById("status").innerText="STOPPED";
 }
 
-// 🎧 RECORDING
+// 🎧 RECORD
 document.getElementById("record").onclick=()=>{
   if(!stream){alert("Start first");return;}
 
@@ -255,6 +274,7 @@ document.getElementById("reset").onclick=()=>{
   time=0;
   finalText="";
   wordCount=0;
+
   document.getElementById("time").innerText=0;
   document.getElementById("words").innerText=0;
   document.getElementById("hz").innerText="--";
