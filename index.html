@@ -1,554 +1,266 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>🎙️ Live Voice Analyzer</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎙️ Voice Analyzer Pro</title>
+
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+*{margin:0;padding:0;box-sizing:border-box}
 
-  body {
-    background: linear-gradient(135deg, #0a0e1a 0%, #0d1528 50%, #0a0e1a 100%);
-    min-height: 100vh;
-    font-family: 'Courier New', monospace;
-    color: #e2e8f0;
-    padding: 24px 16px;
-  }
+body{
+  font-family:'Courier New',monospace;
+  background:#0f172a;
+  color:#e2e8f0;
+  padding:20px;
+}
 
-  h1 {
-    font-size: clamp(22px, 5vw, 34px);
-    font-weight: 900;
-    letter-spacing: -1px;
-    background: linear-gradient(90deg, #38bdf8, #818cf8, #e879f9);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
+h1{text-align:center;margin-bottom:15px}
 
-  .header { text-align: center; margin-bottom: 24px; }
-  .header .sub { font-size: 11px; letter-spacing: 5px; color: #64748b; text-transform: uppercase; margin-bottom: 6px; }
-  .header .desc { font-size: 12px; color: #475569; margin-top: 6px; }
+.card{
+  background:#020617;
+  padding:15px;
+  border-radius:12px;
+  margin-bottom:10px;
+}
 
-  .card {
-    background: rgba(15,23,42,0.9);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 14px;
-    padding: 14px 16px;
-    margin-bottom: 12px;
-    position: relative;
-    overflow: hidden;
-  }
+.metrics{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:10px;
+}
 
-  .card-label {
-    font-size: 9px;
-    color: #475569;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    margin-bottom: 10px;
-  }
+.metric{text-align:center}
 
-  /* Waveform */
-  #waveform {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    height: 64px;
-  }
-  .bar {
-    flex: 1;
-    min-width: 3px;
-    height: 4px;
-    border-radius: 2px;
-    background: #1e293b;
-    align-self: center;
-    transition: height 0.06s ease;
-  }
+.bar{
+  height:10px;
+  background:linear-gradient(90deg,#6366f1,#22c55e,#f59e0b,#ef4444);
+  border-radius:5px;
+  margin-top:10px;
+  position:relative;
+}
 
-  .vol-track {
-    height: 4px;
-    border-radius: 2px;
-    background: #1e293b;
-    overflow: hidden;
-    margin-top: 10px;
-  }
-  #vol-bar {
-    height: 100%;
-    width: 0%;
-    background: #22c55e;
-    border-radius: 2px;
-    transition: width 0.1s ease, background 0.3s;
-  }
-  .vol-label { font-size: 9px; color: #334155; margin-top: 3px; }
+.pointer{
+  width:15px;height:15px;
+  background:white;
+  border-radius:50%;
+  position:absolute;
+  top:-3px;
+  left:0%;
+}
 
-  /* Metrics Grid */
-  .metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-  .metric-card {
-    background: rgba(15,23,42,0.9);
-    border-radius: 14px;
-    padding: 14px 10px;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-  }
-  .metric-card .top-bar {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  }
-  .metric-label { font-size: 9px; color: #475569; letter-spacing: 2px; margin-bottom: 6px; }
-  .metric-value { font-size: clamp(20px, 4vw, 32px); font-weight: 900; color: var(--accent); line-height: 1; }
-  .metric-unit { font-size: 10px; color: #64748b; margin-top: 2px; }
-  .metric-sub { font-size: 9px; color: #475569; margin-top: 6px; }
+#vol{
+  height:5px;
+  background:#22c55e;
+  width:0%;
+  margin-top:10px;
+}
 
-  /* Pitch Meter */
-  #pitch-label {
-    font-size: 11px; font-weight: 700;
-    padding: 2px 8px; border-radius: 6px;
-  }
-  .meter-labels {
-    display: flex; justify-content: space-between;
-    font-size: 8px; color: #334155; margin-bottom: 4px;
-  }
-  .meter-track {
-    height: 12px; border-radius: 6px;
-    background: linear-gradient(90deg, #6366f1 0%, #22c55e 29%, #f59e0b 40%, #ef4444 100%);
-    position: relative;
-    opacity: 0.35;
-  }
-  #pitch-dot {
-    position: absolute;
-    top: 50%; left: 0%;
-    transform: translate(-50%, -50%);
-    width: 16px; height: 16px;
-    border-radius: 50%;
-    background: #6366f1;
-    border: 2px solid #0a0e1a;
-    box-shadow: 0 0 10px #6366f1;
-    transition: left 0.2s ease, background 0.3s, box-shadow 0.3s;
-    opacity: 0;
-  }
-  .meter-bottom { display: flex; justify-content: space-between; font-size: 8px; color: #334155; margin-top: 4px; }
+button{
+  width:100%;
+  padding:12px;
+  border:none;
+  border-radius:10px;
+  margin-top:8px;
+  font-weight:bold;
+}
 
-  /* Categories */
-  .categories { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-  .cat-card {
-    background: rgba(15,23,42,0.5);
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 10px;
-    padding: 8px 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.3s;
-  }
-  .cat-dot { width: 8px; height: 8px; border-radius: 50%; }
-  .cat-name { font-size: 11px; font-weight: 700; }
-  .cat-range { font-size: 9px; color: #475569; }
-
-  /* Transcript */
-  #transcript-box {
-    font-size: 13px;
-    color: #334155;
-    line-height: 1.6;
-    min-height: 60px;
-    max-height: 100px;
-    overflow-y: auto;
-  }
-  #transcript-box.active { color: #cbd5e1; }
-  .cursor {
-    display: inline-block;
-    width: 8px; height: 14px;
-    background: #38bdf8;
-    margin-left: 4px;
-    border-radius: 1px;
-    animation: blink 1s infinite;
-    vertical-align: middle;
-  }
-
-  /* Buttons */
-  .controls { display: flex; gap: 10px; }
-  #start-btn {
-    flex: 2;
-    padding: 16px 0;
-    border-radius: 14px;
-    border: none;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 900;
-    letter-spacing: 2px;
-    font-family: 'Courier New', monospace;
-    background: linear-gradient(135deg, #6366f1, #818cf8);
-    color: #fff;
-    box-shadow: 0 0 20px rgba(99,102,241,0.4);
-    transition: all 0.3s;
-  }
-  #start-btn.active {
-    background: linear-gradient(135deg, #dc2626, #b91c1c);
-    box-shadow: 0 0 20px rgba(239,68,68,0.4);
-  }
-  #reset-btn {
-    flex: 1;
-    padding: 16px 0;
-    border-radius: 14px;
-    border: 1px solid rgba(255,255,255,0.1);
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 700;
-    font-family: 'Courier New', monospace;
-    background: rgba(15,23,42,0.8);
-    color: #64748b;
-    letter-spacing: 1px;
-  }
-
-  /* Status dot */
-  #status-dot { font-size: 9px; }
-
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-
-  .top-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+#start{background:#6366f1;color:white}
+#record{background:#22c55e;color:white}
+#reset{background:#111827;color:#aaa}
 </style>
 </head>
+
 <body>
 
-<div class="header">
-  <div class="sub">Live Voice Intelligence</div>
-  <h1>🎙️ VOICE ANALYZER</h1>
-  <div class="desc">Real-time Hz · Word Count · Pitch Detection</div>
-</div>
+<h1>🎙️ Voice Analyzer Pro</h1>
 
-<!-- Waveform -->
 <div class="card">
-  <div class="card-label">Live Waveform</div>
-  <div id="waveform"></div>
-  <div class="vol-track"><div id="vol-bar"></div></div>
-  <div class="vol-label">VOLUME LEVEL</div>
+  Frequency: <span id="hz">--</span> Hz
+  <div id="vol"></div>
 </div>
 
-<!-- Metrics -->
 <div class="metrics">
-  <div class="metric-card" style="border:1px solid rgba(99,102,241,0.3)">
-    <div class="top-bar" style="--accent:#6366f1"></div>
-    <div class="metric-label">FREQUENCY</div>
-    <div class="metric-value" style="--accent:#6366f1" id="hz-val">—</div>
-    <div class="metric-unit">Hz</div>
-    <div class="metric-sub" id="avg-hz">avg: —</div>
+  <div class="card metric">
+    Words<br><b id="words">0</b>
   </div>
-  <div class="metric-card" style="border:1px solid rgba(56,189,248,0.3)">
-    <div class="top-bar" style="--accent:#38bdf8"></div>
-    <div class="metric-label">WORDS</div>
-    <div class="metric-value" style="--accent:#38bdf8" id="word-val">0</div>
-    <div class="metric-unit">spoken</div>
-    <div class="metric-sub" id="wpm-val">0 wpm</div>
+  <div class="card metric">
+    Time<br><b id="time">0</b>
   </div>
-  <div class="metric-card" style="border:1px solid rgba(232,121,249,0.3)">
-    <div class="top-bar" style="--accent:#e879f9"></div>
-    <div class="metric-label">DURATION</div>
-    <div class="metric-value" style="--accent:#e879f9" id="timer-val">00:00</div>
-    <div class="metric-unit">session</div>
-    <div class="metric-sub" id="status-dot">○ IDLE</div>
+  <div class="card metric">
+    Status<br><b id="status">IDLE</b>
   </div>
 </div>
 
-<!-- Pitch Meter -->
 <div class="card">
-  <div class="top-flex">
-    <div class="card-label" style="margin:0">PITCH METER</div>
-    <div id="pitch-label" style="color:#6366f1;background:rgba(99,102,241,0.15)">⚪ —</div>
-  </div>
-  <div class="meter-labels">
-    <span>50 Hz</span><span>Deep</span><span>Male</span><span>Female</span><span>500 Hz</span>
-  </div>
-  <div class="meter-track">
-    <div id="pitch-dot"></div>
-  </div>
-  <div class="meter-bottom">
-    <span>Low</span>
-    <span style="color:#6366f1">130</span>
-    <span style="color:#22c55e">180</span>
-    <span style="color:#f59e0b">300</span>
-    <span>High</span>
+  Pitch Meter
+  <div class="bar">
+    <div id="dot" class="pointer"></div>
   </div>
 </div>
 
-<!-- Categories -->
-<div class="categories">
-  <div class="cat-card" id="cat-deep">
-    <div class="cat-dot" style="background:#6366f1"></div>
-    <div><div class="cat-name" style="color:#6366f1">Deep</div><div class="cat-range">&lt; 130 Hz</div></div>
-  </div>
-  <div class="cat-card" id="cat-male">
-    <div class="cat-dot" style="background:#22c55e"></div>
-    <div><div class="cat-name" style="color:#22c55e">Male</div><div class="cat-range">130–180 Hz</div></div>
-  </div>
-  <div class="cat-card" id="cat-female">
-    <div class="cat-dot" style="background:#f59e0b"></div>
-    <div><div class="cat-name" style="color:#f59e0b">Female / High</div><div class="cat-range">180–300 Hz</div></div>
-  </div>
-  <div class="cat-card" id="cat-child">
-    <div class="cat-dot" style="background:#ef4444"></div>
-    <div><div class="cat-name" style="color:#ef4444">Child / Very High</div><div class="cat-range">&gt; 300 Hz</div></div>
-  </div>
-</div>
+<div class="card" id="text">Press START</div>
 
-<!-- Transcript -->
-<div class="card">
-  <div class="card-label">Live Transcript</div>
-  <div id="transcript-box">Press START to begin</div>
-</div>
-
-<!-- Controls -->
-<div class="controls">
-  <button id="start-btn" onclick="toggleListening()">▶ START</button>
-  <button id="reset-btn" onclick="resetAll()">↺ RESET</button>
-</div>
+<button id="start">▶ START</button>
+<button id="record">⏺ RECORD</button>
+<button id="reset">↺ RESET</button>
 
 <script>
-  // ─── State ───
-  let isListening = false;
-  let audioCtx, analyser, source, stream, recognition;
-  let animFrame, timerInterval;
-  let sessionTime = 0;
-  let wordCount = 0;
-  let hzHistory = [];
-  let finalText = "";
+let ctx, analyser, stream, source;
+let running=false, time=0, interval;
+let recognition, finalText="", wordCount=0;
 
-  // ─── Build waveform bars ───
-  const waveDiv = document.getElementById('waveform');
-  const BARS = 60;
-  for (let i = 0; i < BARS; i++) {
-    const b = document.createElement('div');
-    b.className = 'bar';
-    b.id = 'bar' + i;
-    waveDiv.appendChild(b);
+let mediaRecorder, audioChunks=[], recording=false;
+
+function detectPitch(buf,sr){
+  let SIZE=buf.length;
+  let best=-1, bestCorr=0;
+
+  for(let off=20;off<1000;off++){
+    let corr=0;
+    for(let i=0;i<1000;i++){
+      corr += buf[i]*buf[i+off];
+    }
+    if(corr>bestCorr){
+      bestCorr=corr;
+      best=off;
+    }
   }
 
-  // ─── Pitch detection (autocorrelation) ───
-  function detectPitch(buf, sr) {
-    const SIZE = buf.length;
-    const HALF = Math.floor(SIZE / 2);
-    let rms = 0;
-    for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
-    rms = Math.sqrt(rms / SIZE);
-    if (rms < 0.01) return null;
+  if(best>0){
+    let hz=sr/best;
+    if(hz>=80 && hz<=400) return Math.round(hz);
+  }
+  return null;
+}
 
-    let best = -1, bestCorr = 0, last = 1;
-    for (let off = 1; off < HALF; off++) {
-      let corr = 0;
-      for (let i = 0; i < HALF; i++) corr += Math.abs(buf[i] - buf[i + off]);
-      corr = 1 - corr / HALF;
-      if (corr > 0.2 && corr > last) {
-        if (corr > bestCorr) { bestCorr = corr; best = off; }
+async function start(){
+  if(running){stop();return;}
+
+  stream = await navigator.mediaDevices.getUserMedia({
+    audio:{
+      noiseSuppression:true,
+      echoCancellation:true,
+      autoGainControl:true
+    }
+  });
+
+  ctx=new AudioContext();
+  analyser=ctx.createAnalyser();
+  source=ctx.createMediaStreamSource(stream);
+  source.connect(analyser);
+
+  let data=new Float32Array(2048);
+
+  function loop(){
+    analyser.getFloatTimeDomainData(data);
+
+    let hz=detectPitch(data,ctx.sampleRate);
+    if(hz){
+      document.getElementById("hz").innerText=hz;
+      document.getElementById("dot").style.left=((hz-80)/320*100)+"%";
+    }
+
+    let sum=0;
+    for(let i of data) sum+=i*i;
+    let vol=Math.sqrt(sum/data.length)*300;
+    document.getElementById("vol").style.width=vol+"%";
+
+    requestAnimationFrame(loop);
+  }
+  loop();
+
+  // Speech recognition FIXED
+  let SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(SR){
+    recognition = new SR();
+    recognition.continuous=true;
+    recognition.interimResults=true;
+    recognition.lang="en-IN";
+
+    recognition.onresult=(e)=>{
+      let final="", interim="";
+
+      for(let i=0;i<e.results.length;i++){
+        let t=e.results[i][0].transcript;
+        if(e.results[i].isFinal) final+=t+" ";
+        else interim+=t;
       }
-      last = corr;
-    }
-    if (best === -1) return null;
-    const f = sr / best;
-    return (f >= 50 && f <= 500) ? Math.round(f * 10) / 10 : null;
-  }
 
-  // ─── Pitch category ───
-  const CATS = [
-    { id:'cat-deep',   label:'🔵 Deep',           color:'#6366f1', max:130 },
-    { id:'cat-male',   label:'🟢 Male',            color:'#22c55e', max:180 },
-    { id:'cat-female', label:'🟡 Female / High',   color:'#f59e0b', max:300 },
-    { id:'cat-child',  label:'🔴 Child / Very High',color:'#ef4444', max:Infinity },
-  ];
-  function getCategory(hz) {
-    return CATS.find(c => hz < c.max) || CATS[3];
-  }
+      finalText=final.trim();
+      let full=(finalText+" "+interim).trim();
 
-  // ─── Update UI ───
-  function updatePitch(hz) {
-    if (!hz) return;
-    hzHistory.push(hz);
-    if (hzHistory.length > 60) hzHistory.shift();
+      document.getElementById("text").innerText=full || "Listening...";
 
-    const cat = getCategory(hz);
-    const avg = Math.round(hzHistory.reduce((a,b)=>a+b,0)/hzHistory.length);
-    const pct = Math.min(Math.max((hz - 50) / 450, 0), 1) * 100;
-
-    document.getElementById('hz-val').textContent = hz.toFixed(0);
-    document.getElementById('avg-hz').textContent = `avg: ${avg} Hz`;
-
-    const dot = document.getElementById('pitch-dot');
-    dot.style.left = pct + '%';
-    dot.style.background = cat.color;
-    dot.style.boxShadow = `0 0 10px ${cat.color}`;
-    dot.style.opacity = '1';
-
-    const lbl = document.getElementById('pitch-label');
-    lbl.textContent = cat.label;
-    lbl.style.color = cat.color;
-    lbl.style.background = cat.color + '22';
-
-    CATS.forEach(c => {
-      const el = document.getElementById(c.id);
-      if (c.id === cat.id) {
-        el.style.background = cat.color + '20';
-        el.style.border = `1px solid ${cat.color}`;
-      } else {
-        el.style.background = 'rgba(15,23,42,0.5)';
-        el.style.border = '1px solid rgba(255,255,255,0.05)';
-      }
-    });
-  }
-
-  function updateVolume(vol) {
-    const bar = document.getElementById('vol-bar');
-    bar.style.width = vol + '%';
-    bar.style.background = vol > 70 ? '#ef4444' : vol > 40 ? '#f59e0b' : '#22c55e';
-  }
-
-  function updateWaveform(byteData, step) {
-    for (let i = 0; i < BARS; i++) {
-      const val = byteData[i * step] / 255;
-      const h = Math.max(4, val * 60);
-      const hue = 220 + i * 2;
-      const bar = document.getElementById('bar' + i);
-      bar.style.height = h + 'px';
-      bar.style.background = `hsl(${hue},80%,60%)`;
-    }
-  }
-
-  function clearWaveform() {
-    for (let i = 0; i < BARS; i++) {
-      const bar = document.getElementById('bar' + i);
-      bar.style.height = '4px';
-      bar.style.background = '#1e293b';
-    }
-  }
-
-  function formatTime(s) {
-    return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
-  }
-
-  // ─── Start / Stop ───
-  async function toggleListening() {
-    if (isListening) { stopAnalysis(); return; }
-
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch(e) {
-      alert('❌ Microphone access denied!\n\nPlease:\n1. Click the 🔒 icon in your browser address bar\n2. Allow Microphone\n3. Refresh and try again');
-      return;
-    }
-
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    source = audioCtx.createMediaStreamSource(stream);
-    source.connect(analyser);
-
-    const timeData = new Float32Array(analyser.fftSize);
-    const byteData = new Uint8Array(analyser.frequencyBinCount);
-    const step = Math.floor(byteData.length / BARS);
-
-    function loop() {
-      analyser.getFloatTimeDomainData(timeData);
-      analyser.getByteTimeDomainData(byteData);
-
-      const hz = detectPitch(timeData, audioCtx.sampleRate);
-      updatePitch(hz);
-
-      let sum = 0;
-      for (let i = 0; i < timeData.length; i++) sum += timeData[i] ** 2;
-      updateVolume(Math.min(Math.sqrt(sum / timeData.length) * 500, 100));
-      updateWaveform(byteData, step);
-
-      animFrame = requestAnimationFrame(loop);
-    }
-    loop();
-
-    // Speech recognition
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SR) {
-      recognition = new SR();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-      recognition.onresult = (e) => {
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) finalText += e.results[i][0].transcript + ' ';
-          else interim += e.results[i][0].transcript;
-        }
-        const full = (finalText + interim).trim();
-        wordCount = full ? full.split(/\s+/).filter(Boolean).length : 0;
-        document.getElementById('word-val').textContent = wordCount;
-        const box = document.getElementById('transcript-box');
-        box.innerHTML = full || 'Listening... start speaking';
-        if (full) box.classList.add('active');
-        box.innerHTML += '<span class="cursor"></span>';
-      };
-      recognition.onerror = () => {
-        // auto-restart on error
-        if (isListening) try { recognition.start(); } catch(e){}
-      };
-      recognition.onend = () => {
-        if (isListening) try { recognition.start(); } catch(e){}
-      };
-      recognition.start();
-    } else {
-      document.getElementById('transcript-box').textContent = '⚠️ Speech recognition not supported in this browser. Use Chrome.';
-    }
-
-    // Timer
-    timerInterval = setInterval(() => {
-      sessionTime++;
-      document.getElementById('timer-val').textContent = formatTime(sessionTime);
-      const wpm = sessionTime > 0
-        ? Math.round(wordCount / Math.max(sessionTime / 60, 0.016))
+      wordCount = finalText
+        ? finalText.split(/\s+/).filter(w=>w).length
         : 0;
-      document.getElementById('wpm-val').textContent = wpm + ' wpm';
-    }, 1000);
 
-    isListening = true;
-    const btn = document.getElementById('start-btn');
-    btn.textContent = '⏹ STOP';
-    btn.classList.add('active');
-    document.getElementById('status-dot').textContent = '● LIVE';
-    document.getElementById('status-dot').style.color = '#22c55e';
-    document.getElementById('transcript-box').textContent = 'Listening... start speaking';
-    document.getElementById('transcript-box').classList.add('active');
+      document.getElementById("words").innerText=wordCount;
+    };
+
+    recognition.start();
   }
 
-  function stopAnalysis() {
-    isListening = false;
-    cancelAnimationFrame(animFrame);
-    clearInterval(timerInterval);
-    if (recognition) try { recognition.stop(); } catch(e){}
-    if (source) source.disconnect();
-    if (audioCtx) audioCtx.close();
-    if (stream) stream.getTracks().forEach(t => t.stop());
-    clearWaveform();
-    updateVolume(0);
+  interval=setInterval(()=>{
+    time++;
+    document.getElementById("time").innerText=time;
+  },1000);
 
-    const btn = document.getElementById('start-btn');
-    btn.textContent = '▶ START';
-    btn.classList.remove('active');
-    document.getElementById('status-dot').textContent = '○ IDLE';
-    document.getElementById('status-dot').style.color = '#475569';
-  }
+  running=true;
+  document.getElementById("status").innerText="LIVE";
+}
 
-  function resetAll() {
-    stopAnalysis();
-    sessionTime = 0; wordCount = 0; hzHistory = []; finalText = '';
-    document.getElementById('hz-val').textContent = '—';
-    document.getElementById('avg-hz').textContent = 'avg: —';
-    document.getElementById('word-val').textContent = '0';
-    document.getElementById('wpm-val').textContent = '0 wpm';
-    document.getElementById('timer-val').textContent = '00:00';
-    document.getElementById('pitch-dot').style.opacity = '0';
-    document.getElementById('pitch-label').textContent = '⚪ —';
-    document.getElementById('transcript-box').textContent = 'Press START to begin';
-    document.getElementById('transcript-box').classList.remove('active');
-    CATS.forEach(c => {
-      const el = document.getElementById(c.id);
-      el.style.background = 'rgba(15,23,42,0.5)';
-      el.style.border = '1px solid rgba(255,255,255,0.05)';
-    });
+function stop(){
+  running=false;
+  stream.getTracks().forEach(t=>t.stop());
+  clearInterval(interval);
+  if(recognition) recognition.stop();
+  document.getElementById("status").innerText="STOPPED";
+}
+
+// 🎧 RECORDING
+document.getElementById("record").onclick=()=>{
+  if(!stream){alert("Start first");return;}
+
+  if(!recording){
+    mediaRecorder=new MediaRecorder(stream);
+    audioChunks=[];
+
+    mediaRecorder.ondataavailable=e=>audioChunks.push(e.data);
+
+    mediaRecorder.onstop=()=>{
+      let blob=new Blob(audioChunks,{type:"audio/webm"});
+      let url=URL.createObjectURL(blob);
+      let a=document.createElement("a");
+      a.href=url;
+      a.download="recording.webm";
+      a.click();
+    };
+
+    mediaRecorder.start();
+    recording=true;
+    document.getElementById("record").innerText="⏹ STOP RECORD";
+  }else{
+    mediaRecorder.stop();
+    recording=false;
+    document.getElementById("record").innerText="⏺ RECORD";
   }
+};
+
+document.getElementById("start").onclick=start;
+
+document.getElementById("reset").onclick=()=>{
+  stop();
+  time=0;
+  finalText="";
+  wordCount=0;
+  document.getElementById("time").innerText=0;
+  document.getElementById("words").innerText=0;
+  document.getElementById("hz").innerText="--";
+  document.getElementById("text").innerText="Press START";
+};
 </script>
+
 </body>
 </html>
