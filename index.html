@@ -1,457 +1,225 @@
-import streamlit as st
-import streamlit.components.v1 as components
-import numpy as np
-import base64
-import io
-import tempfile
-import os
-
-st.set_page_config(
-    page_title="Live Voice Analyzer",
-    page_icon="🎙️",
-    layout="centered"
-)
-
-st.markdown("""
-<style>
-#MainMenu, footer, header { visibility: hidden; }
-.block-container { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
-</style>
-""", unsafe_allow_html=True)
-
-# ── Session state ──
-if "transcript" not in st.session_state:
-    st.session_state.transcript = ""
-if "word_count" not in st.session_state:
-    st.session_state.word_count = 0
-if "waveform_data" not in st.session_state:
-    st.session_state.waveform_data = []
-if "audio_b64" not in st.session_state:
-    st.session_state.audio_b64 = None
-if "hz" not in st.session_state:
-    st.session_state.hz = None
-if "avg_hz" not in st.session_state:
-    st.session_state.avg_hz = None
-if "pitch_cat" not in st.session_state:
-    st.session_state.pitch_cat = None
-if "duration" not in st.session_state:
-    st.session_state.duration = "00:00"
-if "session_done" not in st.session_state:
-    st.session_state.session_done = False
-
-html_recorder = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8"/>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Analyzer</title>
+
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: linear-gradient(135deg, #0a0e1a 0%, #0d1528 100%);
-    font-family: 'Courier New', monospace;
-    color: #e2e8f0;
-    padding: 20px 16px;
-    min-height: 100vh;
-  }
-  .header { text-align: center; margin-bottom: 20px; }
-  .header .sub { font-size: 11px; letter-spacing: 5px; color: #64748b; text-transform: uppercase; margin-bottom: 6px; }
-  .header h1 {
-    font-size: clamp(22px, 5vw, 32px); font-weight: 900;
-    background: linear-gradient(90deg, #38bdf8, #818cf8, #e879f9);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-  }
-  .header .desc { font-size: 12px; color: #475569; margin-top: 6px; }
+body {
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+    background: radial-gradient(circle at top, #0b132b, #020617);
+    color: #cbd5f5;
+}
 
-  .card { background: rgba(15,23,42,0.9); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }
-  .card-label { font-size: 9px; color: #475569; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 10px; }
+/* Header */
+.header {
+    text-align: center;
+    padding: 20px;
+}
+.header h1 {
+    color: #7dd3fc;
+    letter-spacing: 2px;
+}
+.header p {
+    font-size: 12px;
+    opacity: 0.6;
+}
 
-  /* Waveform */
-  #waveform { display: flex; align-items: center; gap: 2px; height: 70px; }
-  .bar { flex: 1; min-width: 3px; height: 4px; border-radius: 2px; background: #1e293b; align-self: center; transition: height 0.06s ease; }
-  .vol-track { height: 4px; border-radius: 2px; background: #1e293b; overflow: hidden; margin-top: 10px; }
-  #vol-bar { height: 100%; width: 0%; background: #22c55e; border-radius: 2px; transition: width 0.1s ease; }
-  .vol-label { font-size: 9px; color: #334155; margin-top: 3px; }
+/* Cards */
+.grid {
+    display: flex;
+    justify-content: space-around;
+    margin: 20px;
+    gap: 10px;
+}
 
-  /* Metrics */
-  .metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-  .metric-card { background: rgba(15,23,42,0.9); border-radius: 14px; padding: 14px 10px; text-align: center; position: relative; overflow: hidden; }
-  .top-bar { position: absolute; top: 0; left: 0; right: 0; height: 2px; }
-  .metric-label { font-size: 9px; color: #475569; letter-spacing: 2px; margin-bottom: 6px; }
-  .metric-value { font-size: clamp(20px, 4vw, 30px); font-weight: 900; line-height: 1; }
-  .metric-unit { font-size: 10px; color: #64748b; margin-top: 2px; }
-  .metric-sub { font-size: 9px; color: #475569; margin-top: 6px; }
+.card {
+    flex: 1;
+    padding: 20px;
+    border-radius: 15px;
+    text-align: center;
+    background: rgba(255,255,255,0.05);
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+}
 
-  /* Pitch meter */
-  .top-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-  #pitch-label { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 6px; }
-  .meter-labels { display: flex; justify-content: space-between; font-size: 8px; color: #334155; margin-bottom: 4px; }
-  .meter-track { height: 12px; border-radius: 6px; background: linear-gradient(90deg, #6366f1 0%, #22c55e 29%, #f59e0b 40%, #ef4444 100%); position: relative; opacity: 0.35; }
-  #pitch-dot { position: absolute; top: 50%; left: 0%; transform: translate(-50%,-50%); width: 16px; height: 16px; border-radius: 50%; background: #6366f1; border: 2px solid #0a0e1a; box-shadow: 0 0 10px #6366f1; transition: left 0.2s ease; opacity: 0; }
-  .meter-bottom { display: flex; justify-content: space-between; font-size: 8px; color: #334155; margin-top: 4px; }
+.card h3 {
+    font-size: 12px;
+    opacity: 0.6;
+}
 
-  /* Categories */
-  .categories { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-  .cat-card { background: rgba(15,23,42,0.5); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; transition: all 0.3s; }
-  .cat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .cat-name { font-size: 11px; font-weight: 700; }
-  .cat-range { font-size: 9px; color: #475569; }
+.value {
+    font-size: 30px;
+    margin-top: 10px;
+}
 
-  /* Transcript */
-  #transcript-box { font-size: 13px; color: #475569; line-height: 1.7; min-height: 60px; max-height: 110px; overflow-y: auto; }
-  #transcript-box.active { color: #cbd5e1; }
-  .cursor { display: inline-block; width: 8px; height: 14px; background: #38bdf8; margin-left: 4px; border-radius: 1px; animation: blink 1s infinite; vertical-align: middle; }
+/* Wave box */
+.wave {
+    margin: 20px;
+    padding: 20px;
+    border-radius: 15px;
+    background: rgba(255,255,255,0.05);
+}
 
-  /* Controls */
-  .controls { display: flex; gap: 10px; margin-top: 4px; }
-  #start-btn { flex: 2; padding: 16px 0; border-radius: 14px; border: none; cursor: pointer; font-size: 14px; font-weight: 900; letter-spacing: 2px; font-family: 'Courier New', monospace; background: linear-gradient(135deg, #6366f1, #818cf8); color: #fff; box-shadow: 0 0 20px rgba(99,102,241,0.4); transition: all 0.3s; }
-  #start-btn.active { background: linear-gradient(135deg, #dc2626, #b91c1c); box-shadow: 0 0 20px rgba(239,68,68,0.4); }
-  #reset-btn { flex: 1; padding: 16px 0; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; font-size: 13px; font-weight: 700; font-family: 'Courier New', monospace; background: rgba(15,23,42,0.8); color: #64748b; }
+/* Pitch meter */
+.pitch {
+    margin: 20px;
+    padding: 20px;
+    border-radius: 15px;
+    background: rgba(255,255,255,0.05);
+}
 
-  /* Post waveform */
-  #post-waveform-section { display: none; }
-  #post-waveform { display: flex; align-items: flex-end; gap: 2px; height: 80px; padding: 0 4px; }
-  .pbar { flex: 1; min-width: 3px; border-radius: 2px 2px 0 0; background: #6366f1; }
+.bar {
+    height: 10px;
+    border-radius: 10px;
+    background: linear-gradient(to right,
+        blue, green, orange, red);
+}
 
-  .status-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; }
+/* Labels */
+.labels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 20px;
+}
 
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.label {
+    padding: 15px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.05);
+}
+
+/* Transcript */
+.transcript {
+    margin: 20px;
+    padding: 20px;
+    border-radius: 15px;
+    background: rgba(255,255,255,0.05);
+    height: 120px;
+}
+
+/* Buttons */
+.controls {
+    display: flex;
+    justify-content: space-around;
+    margin: 20px;
+}
+
+button {
+    padding: 15px 30px;
+    border-radius: 30px;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.start {
+    background: linear-gradient(45deg, #6366f1, #a78bfa);
+    color: white;
+}
+
+.reset {
+    background: transparent;
+    border: 1px solid #555;
+    color: #aaa;
+}
 </style>
 </head>
+
 <body>
 
 <div class="header">
-  <div class="sub">Live Voice Intelligence</div>
-  <h1>&#127897; VOICE ANALYZER</h1>
-  <div class="desc">Real-time Hz &middot; Word Count &middot; Pitch Detection</div>
+    <h1>🎤 VOICE ANALYZER</h1>
+    <p>Real-time Hz • Word Count • Pitch Detection</p>
 </div>
 
-<!-- Live Waveform (hidden after stop) -->
-<div class="card" id="live-waveform-section">
-  <div class="card-label">Live Waveform</div>
-  <div id="waveform"></div>
-  <div class="vol-track"><div id="vol-bar"></div></div>
-  <div class="vol-label">VOLUME LEVEL</div>
+<div class="wave">
+    <p>Live Waveform (visual placeholder)</p>
 </div>
 
-<!-- Post-session Waveform (shown after stop) -->
-<div class="card" id="post-waveform-section">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-    <div class="card-label" style="margin:0">Session Waveform</div>
-    <span class="status-badge" style="background:rgba(34,197,94,0.15);color:#22c55e">&#10003; Recording Complete</span>
-  </div>
-  <div id="post-waveform"></div>
-  <div style="font-size:9px;color:#334155;margin-top:6px">Full session audio profile</div>
+<div class="grid">
+    <div class="card">
+        <h3>FREQUENCY</h3>
+        <div class="value" id="freq">--</div>
+        <small>Hz</small>
+    </div>
+
+    <div class="card">
+        <h3>WORDS</h3>
+        <div class="value" id="words">0</div>
+        <small>spoken</small>
+    </div>
+
+    <div class="card">
+        <h3>DURATION</h3>
+        <div class="value" id="time">00:00</div>
+        <small id="status">IDLE</small>
+    </div>
 </div>
 
-<!-- Metrics -->
-<div class="metrics">
-  <div class="metric-card" style="border:1px solid rgba(99,102,241,0.3)">
-    <div class="top-bar" style="background:linear-gradient(90deg,transparent,#6366f1,transparent)"></div>
-    <div class="metric-label">FREQUENCY</div>
-    <div class="metric-value" style="color:#6366f1" id="hz-val">&#8212;</div>
-    <div class="metric-unit">Hz</div>
-    <div class="metric-sub" id="avg-hz">avg: &#8212;</div>
-  </div>
-  <div class="metric-card" style="border:1px solid rgba(56,189,248,0.3)">
-    <div class="top-bar" style="background:linear-gradient(90deg,transparent,#38bdf8,transparent)"></div>
-    <div class="metric-label">WORDS</div>
-    <div class="metric-value" style="color:#38bdf8" id="word-val">0</div>
-    <div class="metric-unit">spoken</div>
-    <div class="metric-sub" id="wpm-val">0 wpm</div>
-  </div>
-  <div class="metric-card" style="border:1px solid rgba(232,121,249,0.3)">
-    <div class="top-bar" style="background:linear-gradient(90deg,transparent,#e879f9,transparent)"></div>
-    <div class="metric-label">DURATION</div>
-    <div class="metric-value" style="color:#e879f9" id="timer-val">00:00</div>
-    <div class="metric-unit">session</div>
-    <div class="metric-sub" id="status-dot">&#9675; IDLE</div>
-  </div>
+<div class="pitch">
+    <p>PITCH METER</p>
+    <div class="bar"></div>
 </div>
 
-<!-- Pitch Meter -->
-<div class="card">
-  <div class="top-flex">
-    <div class="card-label" style="margin:0">PITCH METER</div>
-    <div id="pitch-label" style="color:#6366f1;background:rgba(99,102,241,0.15)">&#8212;</div>
-  </div>
-  <div class="meter-labels"><span>50 Hz</span><span>Deep</span><span>Male</span><span>Female</span><span>500 Hz</span></div>
-  <div class="meter-track"><div id="pitch-dot"></div></div>
-  <div class="meter-bottom">
-    <span>Low</span>
-    <span style="color:#6366f1">130</span>
-    <span style="color:#22c55e">180</span>
-    <span style="color:#f59e0b">300</span>
-    <span>High</span>
-  </div>
+<div class="labels">
+    <div class="label">🔵 Deep (&lt;130 Hz)</div>
+    <div class="label">🟢 Male (130–180 Hz)</div>
+    <div class="label">🟠 Female (180–300 Hz)</div>
+    <div class="label">🔴 Child (&gt;300 Hz)</div>
 </div>
 
-<!-- Pitch Categories -->
-<div class="categories">
-  <div class="cat-card" id="cat-deep"><div class="cat-dot" style="background:#6366f1"></div><div><div class="cat-name" style="color:#6366f1">Deep</div><div class="cat-range">&lt; 130 Hz</div></div></div>
-  <div class="cat-card" id="cat-male"><div class="cat-dot" style="background:#22c55e"></div><div><div class="cat-name" style="color:#22c55e">Male</div><div class="cat-range">130&#8211;180 Hz</div></div></div>
-  <div class="cat-card" id="cat-female"><div class="cat-dot" style="background:#f59e0b"></div><div><div class="cat-name" style="color:#f59e0b">Female / High</div><div class="cat-range">180&#8211;300 Hz</div></div></div>
-  <div class="cat-card" id="cat-child"><div class="cat-dot" style="background:#ef4444"></div><div><div class="cat-name" style="color:#ef4444">Child / Very High</div><div class="cat-range">&gt; 300 Hz</div></div></div>
+<div class="transcript" id="transcript">
+    Press START to begin...
 </div>
 
-<!-- Transcript -->
-<div class="card">
-  <div class="card-label">Live Transcript</div>
-  <div id="transcript-box">Press START to begin</div>
-</div>
-
-<!-- Controls -->
 <div class="controls">
-  <button id="start-btn" onclick="toggleListening()">&#9654; START</button>
-  <button id="reset-btn" onclick="resetAll()">&#8635; RESET</button>
+    <button class="start" onclick="start()">▶ START</button>
+    <button class="reset" onclick="reset()">RESET</button>
 </div>
 
 <script>
-  var isListening = false;
-  var audioCtx, analyser, source, stream, recognition;
-  var animFrame, timerInterval;
-  var sessionTime = 0;
-  var wordCount = 0;
-  var hzHistory = [];
-  var finalText = "";
-  var allVolumes = [];   // stores volume samples for post waveform
-  var allHzSamples = []; // stores all Hz for post analysis
+let running = false;
+let seconds = 0;
+let timer;
 
-  // Build live waveform bars
-  var waveDiv = document.getElementById('waveform');
-  var BARS = 60;
-  for (var i = 0; i < BARS; i++) {
-    var b = document.createElement('div');
-    b.className = 'bar'; b.id = 'bar' + i;
-    waveDiv.appendChild(b);
-  }
+function start() {
+    if (running) return;
 
-  // Pitch detection
-  function detectPitch(buf, sr) {
-    var SIZE = buf.length, HALF = Math.floor(SIZE / 2);
-    var rms = 0;
-    for (var i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
-    rms = Math.sqrt(rms / SIZE);
-    if (rms < 0.01) return null;
-    var best = -1, bestCorr = 0, last = 1;
-    for (var off = 1; off < HALF; off++) {
-      var corr = 0;
-      for (var j = 0; j < HALF; j++) corr += Math.abs(buf[j] - buf[j + off]);
-      corr = 1 - corr / HALF;
-      if (corr > 0.2 && corr > last && corr > bestCorr) { bestCorr = corr; best = off; }
-      last = corr;
-    }
-    if (best === -1) return null;
-    var f = sr / best;
-    return (f >= 50 && f <= 500) ? Math.round(f * 10) / 10 : null;
-  }
+    running = true;
+    document.getElementById("status").innerText = "RUNNING";
 
-  var CATS = [
-    { id:'cat-deep',   label:'Deep',             color:'#6366f1', max:130 },
-    { id:'cat-male',   label:'Male',              color:'#22c55e', max:180 },
-    { id:'cat-female', label:'Female / High',     color:'#f59e0b', max:300 },
-    { id:'cat-child',  label:'Child / Very High', color:'#ef4444', max:Infinity }
-  ];
-  function getCategory(hz) {
-    for (var i = 0; i < CATS.length; i++) if (hz < CATS[i].max) return CATS[i];
-    return CATS[3];
-  }
+    timer = setInterval(() => {
+        seconds++;
 
-  function updatePitch(hz) {
-    if (!hz) return;
-    hzHistory.push(hz); allHzSamples.push(hz);
-    if (hzHistory.length > 60) hzHistory.shift();
-    var sum = 0;
-    for (var i = 0; i < hzHistory.length; i++) sum += hzHistory[i];
-    var avg = Math.round(sum / hzHistory.length);
-    var pct = Math.min(Math.max((hz - 50) / 450, 0), 1) * 100;
-    var cat = getCategory(hz);
-    document.getElementById('hz-val').textContent = hz.toFixed(0);
-    document.getElementById('avg-hz').textContent = 'avg: ' + avg + ' Hz';
-    var dot = document.getElementById('pitch-dot');
-    dot.style.left = pct + '%'; dot.style.background = cat.color;
-    dot.style.boxShadow = '0 0 10px ' + cat.color; dot.style.opacity = '1';
-    var lbl = document.getElementById('pitch-label');
-    lbl.textContent = cat.label; lbl.style.color = cat.color;
-    lbl.style.background = cat.color + '22';
-    for (var i = 0; i < CATS.length; i++) {
-      var el = document.getElementById(CATS[i].id);
-      if (CATS[i].id === cat.id) {
-        el.style.background = cat.color + '20';
-        el.style.border = '1px solid ' + cat.color;
-      } else {
-        el.style.background = 'rgba(15,23,42,0.5)';
-        el.style.border = '1px solid rgba(255,255,255,0.05)';
-      }
-    }
-  }
+        let min = String(Math.floor(seconds / 60)).padStart(2, '0');
+        let sec = String(seconds % 60).padStart(2, '0');
 
-  function updateVolume(vol) {
-    var bar = document.getElementById('vol-bar');
-    var v = Math.min(vol, 100);
-    bar.style.width = v + '%';
-    bar.style.background = v > 70 ? '#ef4444' : v > 40 ? '#f59e0b' : '#22c55e';
-    allVolumes.push(v); // store for post-waveform
-  }
+        document.getElementById("time").innerText = min + ":" + sec;
 
-  function updateWaveform(byteData, step) {
-    for (var i = 0; i < BARS; i++) {
-      var val = byteData[i * step] / 255;
-      var h = Math.max(4, val * 64);
-      var hue = 220 + i * 2;
-      var bar = document.getElementById('bar' + i);
-      bar.style.height = h + 'px';
-      bar.style.background = 'hsl(' + hue + ',80%,60%)';
-    }
-  }
+        // fake frequency + words
+        document.getElementById("freq").innerText =
+            Math.floor(Math.random() * 300 + 80);
 
-  function clearWaveform() {
-    for (var i = 0; i < BARS; i++) {
-      document.getElementById('bar' + i).style.height = '4px';
-      document.getElementById('bar' + i).style.background = '#1e293b';
-    }
-  }
+        document.getElementById("words").innerText =
+            Math.floor(seconds / 2);
 
-  // Build post-session static waveform
-  function buildPostWaveform() {
-    var postDiv = document.getElementById('post-waveform');
-    postDiv.innerHTML = '';
-    if (allVolumes.length === 0) return;
+    }, 1000);
+}
 
-    // Downsample to 80 bars
-    var N = 80;
-    var step = Math.max(1, Math.floor(allVolumes.length / N));
-    var samples = [];
-    for (var i = 0; i < N; i++) {
-      var idx = Math.min(i * step, allVolumes.length - 1);
-      var chunk = allVolumes.slice(idx, idx + step);
-      var max = 0;
-      for (var j = 0; j < chunk.length; j++) if (chunk[j] > max) max = chunk[j];
-      samples.push(max);
-    }
+function reset() {
+    running = false;
+    clearInterval(timer);
+    seconds = 0;
 
-    // Find global max for normalization
-    var globalMax = 1;
-    for (var i = 0; i < samples.length; i++) if (samples[i] > globalMax) globalMax = samples[i];
+    document.getElementById("time").innerText = "00:00";
+    document.getElementById("freq").innerText = "--";
+    document.getElementById("words").innerText = "0";
+    document.getElementById("status").innerText = "IDLE";
+}
+</script>
 
-    for (var i = 0; i < samples.length; i++) {
-      var b = document.createElement('div');
-      b.className = 'pbar';
-      var pct = samples[i] / globalMax;
-      var h = Math.max(4, Math.round(pct * 76));
-      // Color gradient: blue -> purple -> pink based on position
-      var hue = 220 + (i / samples.length) * 140;
-      b.style.height = h + 'px';
-      b.style.background = 'hsl(' + hue + ',75%,60%)';
-      b.style.opacity = (0.5 + pct * 0.5).toString();
-      postDiv.appendChild(b);
-    }
-
-    document.getElementById('post-waveform-section').style.display = 'block';
-    document.getElementById('live-waveform-section').style.display = 'none';
-  }
-
-  function formatTime(s) {
-    return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
-  }
-
-  // Speech recognition — called after mic permission granted
-  function startRecognition() {
-    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      document.getElementById('transcript-box').innerHTML =
-        '<span style="color:#ef4444">Speech recognition requires Google Chrome browser.</span>';
-      return;
-    }
-    recognition = new SR();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    recognition.lang = 'en-US';
-
-    recognition.onresult = function(e) {
-      var interim = '';
-      for (var i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) finalText += e.results[i][0].transcript + ' ';
-        else interim += e.results[i][0].transcript;
-      }
-      var full = (finalText + interim).trim();
-      wordCount = full ? full.split(/\s+/).filter(Boolean).length : 0;
-      document.getElementById('word-val').textContent = wordCount;
-      var box = document.getElementById('transcript-box');
-      box.innerHTML = (full || 'Listening... keep speaking') + '<span class="cursor"></span>';
-      box.classList.add('active');
-    };
-
-    recognition.onerror = function(e) {
-      if (e.error === 'no-speech') return; // ignore silence
-      if (isListening && e.error !== 'not-allowed') {
-        setTimeout(function() { if (isListening) { try { recognition.start(); } catch(x){} } }, 400);
-      }
-    };
-
-    recognition.onend = function() {
-      if (isListening) {
-        setTimeout(function() { if (isListening) { try { recognition.start(); } catch(x){} } }, 200);
-      }
-    };
-
-    try { recognition.start(); } catch(e) {}
-  }
-
-  function toggleListening() {
-    if (isListening) { stopAnalysis(); return; }
-
-    // Reset post-waveform section
-    document.getElementById('post-waveform-section').style.display = 'none';
-    document.getElementById('live-waveform-section').style.display = 'block';
-    allVolumes = []; allHzSamples = [];
-
-    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-      .then(function(s) {
-        stream = s;
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 2048;
-        source = audioCtx.createMediaStreamSource(stream);
-        source.connect(analyser);
-
-        var timeData = new Float32Array(analyser.fftSize);
-        var byteData = new Uint8Array(analyser.frequencyBinCount);
-        var step = Math.floor(byteData.length / BARS);
-
-        function loop() {
-          analyser.getFloatTimeDomainData(timeData);
-          analyser.getByteTimeDomainData(byteData);
-          updatePitch(detectPitch(timeData, audioCtx.sampleRate));
-          var sum = 0;
-          for (var i = 0; i < timeData.length; i++) sum += timeData[i] * timeData[i];
-          updateVolume(Math.min(Math.sqrt(sum / timeData.length) * 500, 100));
-          updateWaveform(byteData, step);
-          animFrame = requestAnimationFrame(loop);
-        }
-        loop();
-
-        timerInterval = setInterval(function() {
-          sessionTime++;
-          document.getElementById('timer-val').textContent = formatTime(sessionTime);
-          document.getElementById('wpm-val').textContent =
-            (sessionTime > 5 ? Math.round(wordCount / (sessionTime / 60)) : 0) + ' wpm';
-        }, 1000);
-
-        isListening = true;
-        var btn = document.getElementById('start-btn');
-        btn.textContent = '\u23F9 STOP';
-        btn.classList.add('active');
-        var sd = document.getElementById('status-dot');
-        sd.textContent = '\u25CF LIVE';
-        sd.style.color = '#22c55e';
-        var box = document.getElementById('transcript-box');
-        box.textContent = 'Listening... start speaking';
-        box.classList.add('active');
-
-        // Start speech recognition AFTER mic is confirmed
-        startRecognition();
-      })
-      .catch(function(err) {
-        alert('Microp
+</body>
+</html>
